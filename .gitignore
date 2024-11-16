@@ -1,4 +1,4 @@
-/lib/env/
+/lib/env/env.dart
 # Miscellaneous
 *.class
 *.log
