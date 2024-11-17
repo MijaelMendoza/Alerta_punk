@@ -1,6 +1,7 @@
+import 'package:alerta_punk/pages/HotSpots/hot_spots.dart';
 import 'package:flutter/material.dart';
-import 'map_page.dart';
-import 'saved_page.dart';
+import 'Map/map_page.dart';
+import 'saved_areas/saved_page.dart';
 import '../widgets/drawer_menu.dart';
 
 class HomePage extends StatefulWidget {
@@ -15,7 +16,7 @@ class _HomePageState extends State<HomePage> {
   final List<Widget> _pages = [
     const MapPage(),
     const SavedPage(),
-    const Center(child: Text('Mapa de Focos de Calor (En desarrollo)')),
+    HotSpots(),
   ];
 
   @override

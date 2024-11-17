@@ -5,7 +5,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'env/env.dart'; // Archivo que contiene la clave de la API de Google.
+import '../../env/env.dart'; // Archivo que contiene la clave de la API de Google.
 import 'save_area_page.dart';
 
 class AddInterestAreaPage extends StatefulWidget {
