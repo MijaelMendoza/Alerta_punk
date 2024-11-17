@@ -1,3 +1,4 @@
+import 'package:alerta_punk/add_interest_area_page.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -75,10 +76,14 @@ class _DrawerMenuState extends State<DrawerMenu> {
             },
           ),
           ListTile(
-            leading: const Icon(Icons.settings),
-            title: const Text('Configuración'),
+            leading: const Icon(Icons.map),
+            title: const Text('Agregar Área de Interés'),
             onTap: () {
-              // Acción para la configuración
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (context) => const AddInterestAreaPage()),
+              );
             },
           ),
           ListTile(
