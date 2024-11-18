@@ -3,8 +3,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../env/env.dart'; // Archivo que contiene la clave de la API de Google.
 import 'save_area_page.dart';
 
@@ -19,6 +19,8 @@ class _AddInterestAreaPageState extends State<AddInterestAreaPage> {
   final List<LatLng> _polygonPoints = [];
   final List<Marker> _markers = [];
   final List<Polygon> _polygons = [];
+  final Set<Polygon> _userPolygons = {}; // Áreas guardadas del usuario
+  final Set<Marker> _userMarkers = {}; // Marcadores de áreas guardadas
   GoogleMapController? mapController;
   LatLng? userLocation;
   final TextEditingController _searchController = TextEditingController();
@@ -27,6 +29,7 @@ class _AddInterestAreaPageState extends State<AddInterestAreaPage> {
   void initState() {
     super.initState();
     _getUserLocation();
+    _loadUserAreas(); // Cargar áreas guardadas
   }
 
   Future<void> _getUserLocation() async {
@@ -75,13 +78,13 @@ class _AddInterestAreaPageState extends State<AddInterestAreaPage> {
     mapController?.animateCamera(CameraUpdate.newLatLngZoom(userLocation!, 15));
   }
 
-  Future<BitmapDescriptor> _createCustomMarker() async {
+  Future<BitmapDescriptor> _createCustomMarker(Color color) async {
     final ui.PictureRecorder pictureRecorder = ui.PictureRecorder();
     final Canvas canvas = Canvas(pictureRecorder);
-    const double size = 80;
+    const double size = 50.0;
 
     final Paint paint = Paint()
-      ..color = Colors.red
+      ..color = color
       ..style = PaintingStyle.fill;
 
     canvas.drawCircle(Offset(size / 2, size / 2), size / 2, paint);
@@ -94,21 +97,119 @@ class _AddInterestAreaPageState extends State<AddInterestAreaPage> {
     return BitmapDescriptor.fromBytes(uint8List);
   }
 
+  Future<void> _loadUserAreas() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Usuario no autenticado')),
+      );
+      return;
+    }
+
+    try {
+      // Obtener las áreas desde Firebase filtradas por UID
+      final areasSnapshot = await FirebaseFirestore.instance
+          .collection('areas')
+          .where('userId', isEqualTo: user.uid)
+          .get();
+
+      final Set<Polygon> userPolygons = {};
+      final Set<Marker> userMarkers = {};
+
+      for (var doc in areasSnapshot.docs) {
+        final data = doc.data();
+        final List<dynamic> pointsData = data['points'];
+        final String colorHex = data['color'];
+        final String name = data['name'];
+        final Map<String, dynamic> centroidData = data['centroid'];
+        final color = Color(int.parse('0xff$colorHex'));
+
+        final List<LatLng> points = pointsData
+            .map((point) => LatLng(point['latitude'], point['longitude']))
+            .toList()
+            .cast<LatLng>();
+
+        // Crear polígono
+        userPolygons.add(
+          Polygon(
+            polygonId: PolygonId(doc.id),
+            points: points,
+            strokeColor: Colors.black,
+            strokeWidth: 3,
+            fillColor: color.withOpacity(0.3),
+            onTap: () {
+              _showAreaInfoDialog(name, color, centroidData);
+            },
+          ),
+        );
+
+        // Crear marcadores personalizados para cada punto
+        for (var point in points) {
+          final icon = await _createCustomMarker(color);
+          userMarkers.add(
+            Marker(
+              markerId: MarkerId(point.toString()),
+              position: point,
+              icon: icon,
+            ),
+          );
+        }
+      }
+
+      setState(() {
+        _userPolygons.addAll(userPolygons);
+        _userMarkers.addAll(userMarkers);
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al cargar áreas: $e')),
+      );
+    }
+  }
+
+  void _showAreaInfoDialog(
+      String name, Color color, Map<String, dynamic> centroidData) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('Información del Área'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Nombre: $name'),
+              Text('Color: ${color.toString()}'),
+              Text(
+                  'Centroide: (${centroidData['latitude']}, ${centroidData['longitude']})'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              child: const Text('Cerrar'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   void _onMapTapped(LatLng position) async {
+    // Mantener la lógica actual para agregar puntos a una nueva área
     final existingIndex = _polygonPoints.indexWhere((point) =>
         (point.latitude - position.latitude).abs() < 1e-6 &&
         (point.longitude - position.longitude).abs() < 1e-6);
 
     if (existingIndex != -1) {
-      // Si el punto ya existe, eliminarlo correctamente
       setState(() {
         _polygonPoints.removeAt(existingIndex);
         _markers.removeAt(existingIndex);
-        _reorderPolygon(); // Reordenar después de eliminar
+        _reorderPolygon();
       });
     } else {
-      // Si no existe, agregar un nuevo punto
-      final customIcon = await _createCustomMarker();
+      final customIcon = await _createCustomMarker(Colors.red);
       setState(() {
         _polygonPoints.add(position);
         _markers.add(
@@ -121,7 +222,7 @@ class _AddInterestAreaPageState extends State<AddInterestAreaPage> {
             },
           ),
         );
-        _reorderPolygon(); // Reordenar después de agregar
+        _reorderPolygon();
       });
     }
   }
@@ -173,71 +274,6 @@ class _AddInterestAreaPageState extends State<AddInterestAreaPage> {
     setState(() {});
   }
 
-  Future<void> _searchPlace(String query) async {
-    final url =
-        'https://maps.googleapis.com/maps/api/place/textsearch/json?query=$query&key=$googleAPIKey';
-
-    try {
-      final response = await http.get(Uri.parse(url));
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['results'].isNotEmpty) {
-          final place = data['results'][0];
-          final lat = place['geometry']['location']['lat'];
-          final lng = place['geometry']['location']['lng'];
-
-          final LatLng placeLatLng = LatLng(lat, lng);
-
-          mapController?.animateCamera(CameraUpdate.newLatLngZoom(placeLatLng, 15));
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Lugar no encontrado')),
-          );
-        }
-      } else {
-        throw Exception('Error en la API de Google Places');
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al buscar lugar: $e')),
-      );
-    }
-  }
-
-  void _saveArea() {
-    if (_polygonPoints.length < 3) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Selecciona al menos 3 puntos para crear un área')),
-      );
-      return;
-    }
-
-    LatLng centroid = _calculateCentroid(_polygonPoints);
-
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => SaveAreaPage(
-          points: _polygonPoints,
-          centroid: centroid,
-        ),
-      ),
-    );
-  }
-
-  LatLng _calculateCentroid(List<LatLng> points) {
-    double latSum = 0.0;
-    double lngSum = 0.0;
-
-    for (var point in points) {
-      latSum += point.latitude;
-      lngSum += point.longitude;
-    }
-
-    return LatLng(latSum / points.length, lngSum / points.length);
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -246,7 +282,20 @@ class _AddInterestAreaPageState extends State<AddInterestAreaPage> {
         actions: [
           IconButton(
             icon: const Icon(Icons.save),
-            onPressed: _saveArea,
+            onPressed: _polygonPoints.length < 3
+                ? null
+                : () {
+                    LatLng centroid = _calculateCentroid(_polygonPoints);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => SaveAreaPage(
+                          points: _polygonPoints,
+                          centroid: centroid,
+                        ),
+                      ),
+                    );
+                  },
           ),
         ],
       ),
@@ -265,7 +314,9 @@ class _AddInterestAreaPageState extends State<AddInterestAreaPage> {
                         borderRadius: BorderRadius.circular(8.0),
                       ),
                     ),
-                    onSubmitted: _searchPlace,
+                    onSubmitted: (query) async {
+                      // Buscar ubicación por texto (puedes implementar si es necesario)
+                    },
                   ),
                 ),
                 Expanded(
@@ -275,13 +326,25 @@ class _AddInterestAreaPageState extends State<AddInterestAreaPage> {
                       zoom: 15,
                     ),
                     onMapCreated: (controller) => mapController = controller,
-                    markers: Set.from(_markers),
-                    polygons: Set.from(_polygons),
+                    markers: Set.from(_markers)..addAll(_userMarkers),
+                    polygons: Set.from(_polygons)..addAll(_userPolygons),
                     onTap: _onMapTapped,
                   ),
                 ),
               ],
             ),
     );
+  }
+
+  LatLng _calculateCentroid(List<LatLng> points) {
+    double latSum = 0.0;
+    double lngSum = 0.0;
+
+    for (var point in points) {
+      latSum += point.latitude;
+      lngSum += point.longitude;
+    }
+
+    return LatLng(latSum / points.length, lngSum / points.length);
   }
 }

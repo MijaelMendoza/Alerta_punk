@@ -18,7 +18,6 @@ class _HotSpotsState extends State<HotSpots> {
   Set<Marker> _markers = Set<Marker>();
   Set<Circle> _circles = Set<Circle>();
   bool _loading = false;
-  LatLng? _selectedPoint;
   List<Map<String, dynamic>> _fireLocations = [];
   bool _dataLoaded = false;
   BitmapDescriptor? _fireIcon;
@@ -55,7 +54,6 @@ class _HotSpotsState extends State<HotSpots> {
     final PictureRecorder pictureRecorder = PictureRecorder();
     final Canvas canvas = Canvas(pictureRecorder);
     const Size size = Size(48.0, 48.0);
-    final Paint paint = Paint()..color = color;
 
     final iconPainter = TextPainter(textDirection: TextDirection.ltr);
     iconPainter.text = TextSpan(

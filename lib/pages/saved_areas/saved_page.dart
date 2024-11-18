@@ -40,6 +40,10 @@ class _SavedPageState extends State<SavedPage> {
           'color': Color(int.parse('0xff${data['color']}')),
           'centroid': data['centroid'],
           'points': data['points'],
+          'droughtPrediction':
+              data['droughtPrediction'], // Incluye la predicción de sequía
+          'floodPrediction':
+              data['floodPrediction'], // Incluye la predicción de inundación
         };
       }).toList();
     } catch (e) {
@@ -85,8 +89,6 @@ class _SavedPageState extends State<SavedPage> {
                   backgroundColor: area['color'],
                 ),
                 title: Text(area['name']),
-                subtitle: Text(
-                    'Centroide: (${area['centroid']['latitude']}, ${area['centroid']['longitude']})'),
                 onTap: () {
                   Navigator.push(
                     context,

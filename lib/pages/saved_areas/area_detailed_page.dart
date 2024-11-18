@@ -1,4 +1,5 @@
 import 'dart:ui' as ui;
+import 'package:alerta_punk/utils/recommendation_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
@@ -23,7 +24,7 @@ class _AreaDetailPageState extends State<AreaDetailPage> {
 
   void _initializePolygonAndMarkers() {
     final points = widget.area['points'] as List<dynamic>;
-    final color = widget.area['color'] as Color;
+    final Color color = widget.area['color'];
 
     final List<LatLng> latLngPoints = points
         .map((point) => LatLng(point['latitude'], point['longitude']))
@@ -84,7 +85,9 @@ class _AreaDetailPageState extends State<AreaDetailPage> {
 
   @override
   Widget build(BuildContext context) {
-    final centroid = widget.area['centroid'] as Map<String, dynamic>;
+    final Color color = widget.area['color'];
+    final droughtPrediction = widget.area['droughtPrediction'] as String?;
+    final floodPrediction = widget.area['floodPrediction'] as String?;
 
     return Scaffold(
       appBar: AppBar(
@@ -100,7 +103,8 @@ class _AreaDetailPageState extends State<AreaDetailPage> {
               flex: 2,
               child: GoogleMap(
                 initialCameraPosition: CameraPosition(
-                  target: LatLng(centroid['latitude'], centroid['longitude']),
+                  target: LatLng(widget.area['centroid']['latitude'],
+                      widget.area['centroid']['longitude']),
                   zoom: 15,
                 ),
                 markers: _markers,
@@ -127,38 +131,37 @@ class _AreaDetailPageState extends State<AreaDetailPage> {
                   width: 20,
                   height: 20,
                   decoration: BoxDecoration(
-                    color: widget.area['color'],
+                    color: color,
                     shape: BoxShape.circle,
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 20),
+
+            // Predicción de sequía
             Text(
-              'Centroide:',
+              'Predicción de Sequía:',
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             Text(
-              '(${centroid['latitude']}, ${centroid['longitude']})',
+              droughtPrediction != null
+                  ? getDroughtRecommendation(droughtPrediction)
+                  : 'No hay datos de predicción de sequía.',
               style: const TextStyle(fontSize: 16),
             ),
             const SizedBox(height: 20),
-            const Text(
-              'Puntos del Área:',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+
+            // Predicción de inundación
+            Text(
+              'Predicción de Inundación:',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
-            Expanded(
-              child: ListView.builder(
-                itemCount: (widget.area['points'] as List<dynamic>).length,
-                itemBuilder: (context, index) {
-                  final point = widget.area['points'][index];
-                  return ListTile(
-                    title: Text(
-                      'Punto ${index + 1}: (${point['latitude']}, ${point['longitude']})',
-                    ),
-                  );
-                },
-              ),
+            Text(
+              floodPrediction != null
+                  ? getFloodRecommendation(floodPrediction)
+                  : 'No hay datos de predicción de inundación.',
+              style: const TextStyle(fontSize: 16),
             ),
           ],
         ),

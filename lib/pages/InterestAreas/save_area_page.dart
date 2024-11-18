@@ -1,4 +1,5 @@
 import 'dart:ui' as ui;
+import 'package:alerta_punk/pages/InterestAreas/make_predicction.dart';
 import 'package:alerta_punk/pages/home_page.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -23,12 +24,17 @@ class _SaveAreaPageState extends State<SaveAreaPage> {
   Set<Polygon> _polygons = {};
   Set<Marker> _markers = {};
   String? _userId;
+  bool _isLoading = true;
+  String _statusMessage = 'Obteniendo datos satelitales de la NASA...';
+  String? _droughtPrediction;
+  String? _floodPrediction;
 
   @override
   void initState() {
     super.initState();
     _initializePolygonAndMarkers();
     _getUserId();
+    _getPredictions(); // Obtener predicciones automáticamente al cargar
   }
 
   Future<void> _getUserId() async {
@@ -92,6 +98,34 @@ class _SaveAreaPageState extends State<SaveAreaPage> {
     return BitmapDescriptor.fromBytes(uint8List);
   }
 
+  Future<void> _getPredictions() async {
+    setState(() {
+      _isLoading = true;
+      _statusMessage = 'Obteniendo datos satelitales de la NASA...';
+    });
+
+    try {
+      final latitude = widget.centroid.latitude;
+      final longitude = widget.centroid.longitude;
+
+      // Realiza la predicción utilizando las funciones anteriores
+      final predictionService = PredictionService();
+      await predictionService.determinePosition();
+      final predictions = await predictionService.makePredictions(latitude, longitude);
+
+      setState(() {
+        _droughtPrediction = predictions['drought'];
+        _floodPrediction = predictions['flood'];
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _statusMessage = 'Error al obtener predicciones: $e';
+        _isLoading = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -100,7 +134,6 @@ class _SaveAreaPageState extends State<SaveAreaPage> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            // Mapa no interactivo
             Expanded(
               flex: 2,
               child: GoogleMap(
@@ -119,8 +152,6 @@ class _SaveAreaPageState extends State<SaveAreaPage> {
               ),
             ),
             const SizedBox(height: 20),
-
-            // Campo de texto para el nombre del área
             TextField(
               decoration: const InputDecoration(
                 labelText: 'Nombre del Área',
@@ -133,8 +164,6 @@ class _SaveAreaPageState extends State<SaveAreaPage> {
               },
             ),
             const SizedBox(height: 20),
-
-            // Selector de color
             Row(
               children: [
                 const Text('Color del Área: ', style: TextStyle(fontSize: 16)),
@@ -156,10 +185,56 @@ class _SaveAreaPageState extends State<SaveAreaPage> {
               ],
             ),
             const Spacer(),
+            if (_isLoading)
+              Text(
+                _statusMessage,
+                style:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            if (!_isLoading &&
+                _droughtPrediction != null &&
+                _floodPrediction != null)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Resultados:',
+                    style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 10),
 
-            // Botón para guardar
+                  // Detalle de sequía
+                  Text(
+                    'Sequía: Nivel $_droughtPrediction',
+                    style: TextStyle(fontSize: 14),
+                  ),
+                  Text(
+                    _getDroughtRecommendation(_droughtPrediction!),
+                    style: const TextStyle(
+                        fontSize: 14, fontStyle: FontStyle.italic),
+                  ),
+                  const SizedBox(height: 10),
+
+                  // Detalle de inundación
+                  Text(
+                    'Inundación: ${_floodPrediction == "1" ? "Alto riesgo de inundación" : "Sin riesgo de inundación"}',
+                    style: TextStyle(fontSize: 14),
+                  ),
+                  Text(
+                    _getFloodRecommendation(_floodPrediction!),
+                    style: const TextStyle(
+                        fontSize: 14, fontStyle: FontStyle.italic),
+                  ),
+                ],
+              ),
+            const Spacer(),
             ElevatedButton(
-              onPressed: _saveToDatabase,
+              onPressed: !_isLoading &&
+                      _droughtPrediction != null &&
+                      _floodPrediction != null
+                  ? _saveToDatabase
+                  : null,
               child: const Text('Guardar Área'),
             ),
           ],
@@ -168,7 +243,54 @@ class _SaveAreaPageState extends State<SaveAreaPage> {
     );
   }
 
-  // Mostrar selector de color
+  Future<void> _saveToDatabase() async {
+    if (_areaName.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Por favor, ingresa el nombre del área.')),
+      );
+      return;
+    }
+
+    if (_userId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Usuario no autenticado.')),
+      );
+      return;
+    }
+
+    final areaData = {
+      'userId': _userId,
+      'name': _areaName,
+      'color': _selectedColor.value.toRadixString(16),
+      'centroid': {
+        'latitude': widget.centroid.latitude,
+        'longitude': widget.centroid.longitude,
+      },
+      'points': widget.points
+          .map((point) =>
+              {'latitude': point.latitude, 'longitude': point.longitude})
+          .toList(),
+      'droughtPrediction': _droughtPrediction,
+      'floodPrediction': _floodPrediction,
+      'createdAt': Timestamp.now(),
+    };
+
+    try {
+      await FirebaseFirestore.instance.collection('areas').add(areaData);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Área guardada exitosamente.')),
+      );
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const HomePage()),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al guardar el área: $e')),
+      );
+    }
+  }
+
   void _showColorPicker(BuildContext context) {
     showDialog(
       context: context,
@@ -199,7 +321,6 @@ class _SaveAreaPageState extends State<SaveAreaPage> {
     );
   }
 
-  // Actualizar el color del polígono y los marcadores
   void _updatePolygonAndMarkers() {
     setState(() {
       _polygons = {
@@ -220,49 +341,30 @@ class _SaveAreaPageState extends State<SaveAreaPage> {
     });
   }
 
-  // Guardar el área en Firebase
-  Future<void> _saveToDatabase() async {
-    if (_areaName.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor, ingresa el nombre del área.')),
-      );
-      return;
+  String _getDroughtRecommendation(String droughtLevel) {
+    switch (droughtLevel) {
+      case "[0]":
+        return "No hay sequía. Mantén las prácticas normales de riego.";
+      case "[1]":
+        return "Sequía leve. Incrementa la monitorización de la humedad del suelo.";
+      case "[2]":
+        return "Sequía moderada. Optimiza el riego y reduce el uso innecesario de agua.";
+      case "[3]":
+        return "Sequía severa. Prioriza los cultivos más importantes.";
+      case "[4]":
+        return "Sequía extrema. Implementa estrategias de conservación de agua.";
+      case "[5]":
+        return "Sequía severa. Considera medidas de emergencia para proteger cultivos.";
+      default:
+        return "Nivel de sequía desconocido.";
     }
+  }
 
-    if (_userId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Usuario no autenticado.')),
-      );
-      return;
-    }
-
-    final areaData = {
-      'userId': _userId,
-      'name': _areaName,
-      'color': _selectedColor.value.toRadixString(16),
-      'centroid': {
-        'latitude': widget.centroid.latitude,
-        'longitude': widget.centroid.longitude,
-      },
-      'points': widget.points
-          .map((point) =>
-              {'latitude': point.latitude, 'longitude': point.longitude})
-          .toList(),
-    };
-
-    try {
-      await FirebaseFirestore.instance.collection('areas').add(areaData);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Área guardada exitosamente.')),
-      );
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const HomePage()),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al guardar el área: $e')),
-      );
+  String _getFloodRecommendation(String floodRisk) {
+    if (floodRisk == "1") {
+      return "Alto riesgo de inundación. Asegúrate de proteger los cultivos y verifica sistemas de drenaje.";
+    } else {
+      return "No hay riesgo de inundación. Mantén prácticas regulares.";
     }
   }
 }
