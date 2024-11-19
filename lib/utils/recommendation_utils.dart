@@ -24,3 +24,10 @@ String getFloodRecommendation(String floodRisk) {
     return "No hay riesgo de inundación. Mantén prácticas regulares.";
   }
 }
+String getFireRecommendation(String fireRisk) {
+  if (fireRisk == "1") {
+    return "Alto riesgo de incendio. Asegúrate de mantener despejadas las áreas circundantes y evita actividades que puedan generar chispas.";
+  } else {
+    return "Bajo riesgo de incendio. Continúa monitoreando las condiciones ambientales.";
+  }
+}

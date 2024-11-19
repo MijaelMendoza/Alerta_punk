@@ -1,4 +1,5 @@
 import 'dart:ui' as ui;
+import 'package:alerta_punk/utils/recommendation_utils.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -17,7 +18,8 @@ class _MapPageState extends State<MapPage> {
   final Location _location = Location();
   LatLng _initialLocation = const LatLng(-16.0, -68);
   Set<Polygon> _polygons = {}; // Polígonos que se dibujarán en el mapa
-  Set<Marker> _markers = {}; // Marcadores personalizados para los puntos del área
+  Set<Marker> _markers =
+      {}; // Marcadores personalizados para los puntos del área
 
   @override
   void initState() {
@@ -81,102 +83,197 @@ class _MapPageState extends State<MapPage> {
   }
 
   Future<void> _loadUserAreas() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Usuario no autenticado')),
+  final user = FirebaseAuth.instance.currentUser;
+  if (user == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Usuario no autenticado')),
+    );
+    return;
+  }
+
+  try {
+    // Obtener las áreas desde Firebase filtradas por UID
+    final areasSnapshot = await FirebaseFirestore.instance
+        .collection('areas')
+        .where('userId', isEqualTo: user.uid)
+        .get();
+
+    final Set<Polygon> userPolygons = {};
+    final Set<Marker> userMarkers = {};
+
+    for (var doc in areasSnapshot.docs) {
+      final data = doc.data();
+      final List<dynamic> pointsData = data['points'];
+      final String colorHex = data['color'];
+      final String name = data['name'];
+      final Map<String, dynamic> centroidData = data['centroid'];
+      final String droughtPrediction = data['droughtPrediction'] ?? '';
+      final String floodPrediction = data['floodPrediction'] ?? '';
+      final String firePrediction = data['firePrediction'] ?? '';
+
+      final color = Color(int.parse('0xff$colorHex'));
+
+      final List<LatLng> points = pointsData
+          .map((point) => LatLng(point['latitude'], point['longitude']))
+          .toList()
+          .cast<LatLng>();
+
+      // Crear polígono
+      userPolygons.add(
+        Polygon(
+          polygonId: PolygonId(doc.id),
+          points: points,
+          strokeColor: Colors.black,
+          strokeWidth: 3,
+          fillColor: color.withOpacity(0.3),
+        ),
       );
-      return;
-    }
 
-    try {
-      // Obtener las áreas desde Firebase filtradas por UID
-      final areasSnapshot = await FirebaseFirestore.instance
-          .collection('areas')
-          .where('userId', isEqualTo: user.uid)
-          .get();
-
-      final Set<Polygon> userPolygons = {};
-      final Set<Marker> userMarkers = {};
-
-      for (var doc in areasSnapshot.docs) {
-        final data = doc.data();
-        final List<dynamic> pointsData = data['points'];
-        final String colorHex = data['color'];
-        final String name = data['name'];
-        final Map<String, dynamic> centroidData = data['centroid'];
-        final color = Color(int.parse('0xff$colorHex'));
-
-        final List<LatLng> points = pointsData
-            .map((point) => LatLng(point['latitude'], point['longitude']))
-            .toList()
-            .cast<LatLng>();
-
-        // Crear polígono
-        userPolygons.add(
-          Polygon(
-            polygonId: PolygonId(doc.id),
-            points: points,
-            strokeColor: Colors.black,
-            strokeWidth: 3,
-            fillColor: color.withOpacity(0.3),
+      // Crear marcadores personalizados para los nodos del área
+      for (var point in points) {
+        final icon = await _createCustomMarker(color);
+        userMarkers.add(
+          Marker(
+            markerId: MarkerId(point.toString()),
+            position: point,
+            icon: icon,
             onTap: () {
-              _showAreaInfoDialog(name, color, centroidData);
+              // Mostrar popup con detalles del área
+              _showAreaDetailPopup(
+                name: name,
+                color: color,
+                centroid: centroidData,
+                droughtPrediction: droughtPrediction,
+                floodPrediction: floodPrediction,
+                firePrediction: firePrediction,
+                area: _calculateArea(points),
+              );
             },
           ),
         );
-
-        // Crear marcadores personalizados para cada punto
-        for (var point in points) {
-          final icon = await _createCustomMarker(color);
-          userMarkers.add(
-            Marker(
-              markerId: MarkerId(point.toString()),
-              position: point,
-              icon: icon,
-            ),
-          );
-        }
       }
-
-      setState(() {
-        _polygons = userPolygons;
-        _markers = userMarkers;
-      });
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al cargar áreas: $e')),
-      );
     }
-  }
 
-  void _showAreaInfoDialog(
-      String name, Color color, Map<String, dynamic> centroidData) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text('Información del Área'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
+    setState(() {
+      _polygons = userPolygons;
+      _markers = userMarkers;
+    });
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Error al cargar áreas: $e')),
+    );
+  }
+}
+
+
+ void _showAreaDetailPopup({
+  required String name,
+  required Color color,
+  required Map<String, dynamic> centroid,
+  required String droughtPrediction,
+  required String floodPrediction,
+  required String firePrediction,
+  required double area,
+}) {
+  showDialog(
+    context: context,
+    builder: (context) {
+      return AlertDialog(
+        title: Text(name),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Nombre: $name'),
-              Text('Color: ${color.toString()}'),
+              // Color del área
+              Row(
+                children: [
+                  const Text(
+                    'Color:',
+                    style: TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(width: 10),
+                  Container(
+                    width: 20,
+                    height: 20,
+                    decoration: BoxDecoration(
+                      color: color,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+
+              // Predicción de sequía
+              const Text(
+                'Predicción de Sequía:',
+                style:
+                    TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
               Text(
-                  'Centroide: (${centroidData['latitude']}, ${centroidData['longitude']})'),
+                droughtPrediction.isNotEmpty
+                    ? getDroughtRecommendation(droughtPrediction)
+                    : 'No hay datos de predicción de sequía.',
+                style: const TextStyle(fontSize: 16),
+              ),
+              const SizedBox(height: 10),
+
+              // Predicción de inundación
+              const Text(
+                'Predicción de Inundación:',
+                style:
+                    TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              Text(
+                floodPrediction.isNotEmpty
+                    ? getFloodRecommendation(floodPrediction)
+                    : 'No hay datos de predicción de inundación.',
+                style: const TextStyle(fontSize: 16),
+              ),
+              const SizedBox(height: 10),
+
+              // Predicción de incendios
+              const Text(
+                'Predicción de Incendios:',
+                style:
+                    TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              Text(
+                firePrediction.isNotEmpty
+                    ? getFireRecommendation(firePrediction)
+                    : 'No hay datos de predicción de incendios.',
+                style: const TextStyle(fontSize: 16),
+              ),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-              },
-              child: const Text('Cerrar'),
-            ),
-          ],
-        );
-      },
-    );
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+            },
+            child: const Text('Cerrar'),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+
+  double _calculateArea(List<LatLng> points) {
+    if (points.length < 3) return 0.0;
+
+    double area = 0.0;
+    for (int i = 0; i < points.length - 1; i++) {
+      area += points[i].longitude * points[i + 1].latitude -
+          points[i + 1].longitude * points[i].latitude;
+    }
+    area += points.last.longitude * points.first.latitude -
+        points.first.longitude * points.last.latitude;
+
+    return area.abs() / 2.0; // Devuelve el área aproximada
   }
 
   @override

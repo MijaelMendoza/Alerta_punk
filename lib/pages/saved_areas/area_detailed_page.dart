@@ -1,4 +1,5 @@
 import 'dart:ui' as ui;
+
 import 'package:alerta_punk/utils/recommendation_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -88,6 +89,7 @@ class _AreaDetailPageState extends State<AreaDetailPage> {
     final Color color = widget.area['color'];
     final droughtPrediction = widget.area['droughtPrediction'] as String?;
     final floodPrediction = widget.area['floodPrediction'] as String?;
+    final firePrediction = widget.area['firePrediction'] as String?;
 
     return Scaffold(
       appBar: AppBar(
@@ -163,6 +165,17 @@ class _AreaDetailPageState extends State<AreaDetailPage> {
                   : 'No hay datos de predicción de inundación.',
               style: const TextStyle(fontSize: 16),
             ),
+            Text(
+              'Predicción de Incendios:',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            Text(
+              firePrediction != null
+                  ? getFireRecommendation(firePrediction)
+                  : 'No hay datos de predicción de incendios.',
+              style: const TextStyle(fontSize: 16),
+            ),
+            const SizedBox(height: 20),
           ],
         ),
       ),

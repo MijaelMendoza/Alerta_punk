@@ -28,6 +28,7 @@ class _SaveAreaPageState extends State<SaveAreaPage> {
   String _statusMessage = 'Obteniendo datos satelitales de la NASA...';
   String? _droughtPrediction;
   String? _floodPrediction;
+  String? _firePrediction;
 
   @override
   void initState() {
@@ -108,14 +109,16 @@ class _SaveAreaPageState extends State<SaveAreaPage> {
       final latitude = widget.centroid.latitude;
       final longitude = widget.centroid.longitude;
 
-      // Realiza la predicción utilizando las funciones anteriores
+      // Instancia del servicio de predicción
       final predictionService = PredictionService();
       await predictionService.determinePosition();
-      final predictions = await predictionService.makePredictions(latitude, longitude);
+      final predictions =
+          await predictionService.makePredictions(latitude, longitude);
 
       setState(() {
         _droughtPrediction = predictions['drought'];
         _floodPrediction = predictions['flood'];
+        _firePrediction = predictions['fire'];
         _isLoading = false;
       });
     } catch (e) {
@@ -193,7 +196,8 @@ class _SaveAreaPageState extends State<SaveAreaPage> {
               ),
             if (!_isLoading &&
                 _droughtPrediction != null &&
-                _floodPrediction != null)
+                _floodPrediction != null &&
+                _firePrediction != null)
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -207,7 +211,7 @@ class _SaveAreaPageState extends State<SaveAreaPage> {
                   // Detalle de sequía
                   Text(
                     'Sequía: Nivel $_droughtPrediction',
-                    style: TextStyle(fontSize: 14),
+                    style: const TextStyle(fontSize: 14),
                   ),
                   Text(
                     _getDroughtRecommendation(_droughtPrediction!),
@@ -219,10 +223,22 @@ class _SaveAreaPageState extends State<SaveAreaPage> {
                   // Detalle de inundación
                   Text(
                     'Inundación: ${_floodPrediction == "1" ? "Alto riesgo de inundación" : "Sin riesgo de inundación"}',
-                    style: TextStyle(fontSize: 14),
+                    style: const TextStyle(fontSize: 14),
                   ),
                   Text(
                     _getFloodRecommendation(_floodPrediction!),
+                    style: const TextStyle(
+                        fontSize: 14, fontStyle: FontStyle.italic),
+                  ),
+                  const SizedBox(height: 10),
+
+                  // Detalle de incendios
+                  Text(
+                    'Incendios: ${_firePrediction == "1" ? "Alto riesgo de incendio" : "Bajo riesgo de incendio"}',
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                  Text(
+                    _getFireRecommendation(_firePrediction!),
                     style: const TextStyle(
                         fontSize: 14, fontStyle: FontStyle.italic),
                   ),
@@ -259,21 +275,23 @@ class _SaveAreaPageState extends State<SaveAreaPage> {
     }
 
     final areaData = {
-      'userId': _userId,
-      'name': _areaName,
-      'color': _selectedColor.value.toRadixString(16),
-      'centroid': {
-        'latitude': widget.centroid.latitude,
-        'longitude': widget.centroid.longitude,
-      },
-      'points': widget.points
-          .map((point) =>
-              {'latitude': point.latitude, 'longitude': point.longitude})
-          .toList(),
-      'droughtPrediction': _droughtPrediction,
-      'floodPrediction': _floodPrediction,
-      'createdAt': Timestamp.now(),
-    };
+  'userId': _userId,
+  'name': _areaName,
+  'color': _selectedColor.value.toRadixString(16),
+  'centroid': {
+    'latitude': widget.centroid.latitude,
+    'longitude': widget.centroid.longitude,
+  },
+  'points': widget.points
+      .map((point) =>
+          {'latitude': point.latitude, 'longitude': point.longitude})
+      .toList(),
+  'droughtPrediction': _droughtPrediction,
+  'floodPrediction': _floodPrediction,
+  'firePrediction': _firePrediction,
+  'createdAt': Timestamp.now(),
+};
+
 
     try {
       await FirebaseFirestore.instance.collection('areas').add(areaData);
@@ -366,5 +384,12 @@ class _SaveAreaPageState extends State<SaveAreaPage> {
     } else {
       return "No hay riesgo de inundación. Mantén prácticas regulares.";
     }
+  }
+}
+String _getFireRecommendation(String fireRisk) {
+  if (fireRisk == "1") {
+    return "Alto riesgo de incendio. Asegúrate de mantener despejadas las áreas circundantes y evita actividades que puedan generar chispas.";
+  } else {
+    return "Bajo riesgo de incendio. Continúa monitoreando las condiciones ambientales.";
   }
 }
