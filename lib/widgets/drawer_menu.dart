@@ -1,4 +1,5 @@
 import 'package:alerta_punk/pages/InterestAreas/add_interest_area_page.dart';
+import 'package:alerta_punk/pages/dashboard_page.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -73,6 +74,17 @@ class _DrawerMenuState extends State<DrawerMenu> {
             title: const Text('Perfil'),
             onTap: () {
               // Acción para el perfil
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.person),
+            title: const Text('Dashboard'),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (context) => const DashboardPage()),
+              );
             },
           ),
           ListTile(

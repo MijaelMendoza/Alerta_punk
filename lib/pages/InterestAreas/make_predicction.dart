@@ -8,7 +8,7 @@ class PredictionService {
   double? latitude;
   double? longitude;
 
-  // Obtener la posición actual del dispositivo
+  // Fetch the current position of the device
   Future<void> determinePosition() async {
     bool serviceEnabled;
     LocationPermission permission;
@@ -22,7 +22,7 @@ class PredictionService {
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
-        throw Exception('Los permisos de ubicación están denegados.');
+        throw Exception('Los permisos de ubicación están denegados');
       }
     }
 
@@ -36,7 +36,7 @@ class PredictionService {
     longitude = position.longitude;
   }
 
-  // Obtener datos climáticos de la API de la NASA
+  // Fetch data from NASA
   Future<Map<String, dynamic>> fetchNasaData(
       double latitude, double longitude) async {
     final currentDate =
@@ -57,7 +57,7 @@ class PredictionService {
     }
   }
 
-  // Obtener datos de precipitación mensual
+  // Fetch precipitation data for flood prediction
   Future<List<double>> fetchMonthlyPrecipitation(
       double latitude, double longitude) async {
     DateTime now = DateTime.now();
@@ -109,10 +109,13 @@ class PredictionService {
     var humidityData = parameterData['QV2M'] ?? {};
     var wind10mData = parameterData['WS10M'] ?? {};
     var pressureData = parameterData['PS'] ?? {};
+    var rainData =
+        parameterData['PRECTOTCORR'] ?? {}; // Precipitación total corregida
 
     // Paso 2: Calcular promedios necesarios
     double avgTemp = temperatureData.isNotEmpty
-        ? temperatureData.values.reduce((a, b) => a + b) / temperatureData.length
+        ? temperatureData.values.reduce((a, b) => a + b) /
+            temperatureData.length
         : 0.0;
     double avgHumidity = humidityData.isNotEmpty
         ? humidityData.values.reduce((a, b) => a + b) / humidityData.length
@@ -123,6 +126,9 @@ class PredictionService {
     double avgPressure = pressureData.isNotEmpty
         ? pressureData.values.reduce((a, b) => a + b) / pressureData.length
         : 0.0;
+    double avgRain = rainData.isNotEmpty
+        ? rainData.values.reduce((a, b) => a + b) / rainData.length
+        : 0.0; // Calcular promedio de lluvia
 
     // Paso 3: Crear los datos de entrada para el modelo
     List<double> fireData = [
@@ -133,11 +139,14 @@ class PredictionService {
       avgTemp - ((100 - avgHumidity) / 5),
       avgTemp + (avgWind10m / 10),
       avgTemp - (avgPressure / 100),
+      avgRain,
     ];
 
+    print(fireData);
     // Paso 4: Enviar los datos al servidor Flask
     final fireResponse = await http.post(
-      Uri.parse('http://192.168.1.7:5000/predecirFire'), // Ruta del modelo en Flask
+      Uri.parse(
+          'http://192.168.104.220:5000/predecirFire'), // Ruta del modelo en Flask
       headers: {"Content-Type": "application/json"},
       body: json.encode({'input': fireData}),
     );
@@ -150,30 +159,94 @@ class PredictionService {
     }
   }
 
-  // Lógica general de predicciones
+  // General prediction logic
   Future<Map<String, String>> makePredictions(
       double latitude, double longitude) async {
-    String droughtPrediction = 'No disponible';
-    String floodPrediction = 'No disponible';
-    String firePrediction = 'No disponible';
+    // Fetch NASA data for drought prediction
+    Map<String, dynamic> nasaData = await fetchNasaData(latitude, longitude);
 
-    try {
-      droughtPrediction = await fetchFirePrediction(latitude, longitude);
-    } catch (e) {
-      print('Error al predecir sequía: $e');
-    }
+    // Drought prediction logic
+    var parameterData = nasaData['properties']['parameter'];
+    var precipitationData = parameterData['PRECTOTCORR'] ?? {};
+    var temperatureData = parameterData['T2M'] ?? {};
+    var humidityData = parameterData['QV2M'] ?? {};
+    var pressureData = parameterData['PS'] ?? {};
+    var wind10mData = parameterData['WS10M'] ?? {};
+    var wind50mData = parameterData['WS50M'] ?? {};
 
-    try {
-      floodPrediction = (await fetchMonthlyPrecipitation(latitude, longitude)) as String;
-    } catch (e) {
-      print('Error al predecir inundación: $e');
-    }
+    double avgPrecipitation = precipitationData.isNotEmpty
+        ? precipitationData.values.reduce((a, b) => a + b) /
+            precipitationData.length
+        : 0.0;
+    double avgTemp = temperatureData.isNotEmpty
+        ? temperatureData.values.reduce((a, b) => a + b) /
+            temperatureData.length
+        : 0.0;
+    double avgHumidity = humidityData.isNotEmpty
+        ? humidityData.values.reduce((a, b) => a + b) / humidityData.length
+        : 0.0;
+    double avgPressure = pressureData.isNotEmpty
+        ? pressureData.values.reduce((a, b) => a + b) / pressureData.length
+        : 0.0;
+    double avgWind10m = wind10mData.isNotEmpty
+        ? wind10mData.values.reduce((a, b) => a + b) / wind10mData.length
+        : 0.0;
+    double avgWind50m = wind50mData.isNotEmpty
+        ? wind50mData.values.reduce((a, b) => a + b) / wind50mData.length
+        : 0.0;
 
+    List<int> droughtData = [
+      avgPrecipitation.round(),
+      avgPressure.round(),
+      avgHumidity.round(),
+      avgTemp.round(),
+      (avgTemp - ((100 - avgHumidity) / 5)).round(),
+      (avgTemp - 2).round(),
+      (avgTemp + 5).round(),
+      (avgTemp - 5).round(),
+      (avgTemp + 5 - (avgTemp - 5)).round(),
+      avgTemp.round(),
+      avgWind10m.round(),
+      (avgWind10m + 2).round(),
+      (avgWind10m - 2).round(),
+      ((avgWind10m + 2) - (avgWind10m - 2)).round(),
+      avgWind50m.round(),
+      (avgWind50m + 3).round(),
+      (avgWind50m - 3).round(),
+      ((avgWind50m + 3) - (avgWind50m - 3)).round(),
+    ];
+
+    final droughtResponse = await http.post(
+      Uri.parse('http://192.168.104.220:5000/predecirDrought'),
+      headers: {"Content-Type": "application/json"},
+      body: json.encode({'input': droughtData}),
+    );
+
+    // Flood prediction logic
+    List<double> monthlyAverages =
+        await fetchMonthlyPrecipitation(latitude, longitude);
+
+    final floodResponse = await http.post(
+      Uri.parse('http://192.168.104.220:5000/predecirFlood'),
+      headers: {"Content-Type": "application/json"},
+      body: json.encode({'input': monthlyAverages}),
+    );
+
+    // Fire prediction logic
+    String firePrediction = 'Error al predecir incendios';
     try {
       firePrediction = await fetchFirePrediction(latitude, longitude);
     } catch (e) {
-      print('Error al predecir incendios: $e');
+      print('Error en predicción de incendios: $e');
     }
+
+    String droughtPrediction = droughtResponse.statusCode == 200
+        ? json.decode(droughtResponse.body)['prediction'].toString()
+        : 'Error al predecir sequía';
+
+    String floodPrediction = floodResponse.statusCode == 200
+        ? json.decode(floodResponse.body)['prediction'].toString()
+        : 'Error al predecir inundación';
 
     return {
       'drought': droughtPrediction,

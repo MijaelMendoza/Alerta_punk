@@ -275,23 +275,22 @@ class _SaveAreaPageState extends State<SaveAreaPage> {
     }
 
     final areaData = {
-  'userId': _userId,
-  'name': _areaName,
-  'color': _selectedColor.value.toRadixString(16),
-  'centroid': {
-    'latitude': widget.centroid.latitude,
-    'longitude': widget.centroid.longitude,
-  },
-  'points': widget.points
-      .map((point) =>
-          {'latitude': point.latitude, 'longitude': point.longitude})
-      .toList(),
-  'droughtPrediction': _droughtPrediction,
-  'floodPrediction': _floodPrediction,
-  'firePrediction': _firePrediction,
-  'createdAt': Timestamp.now(),
-};
-
+      'userId': _userId,
+      'name': _areaName,
+      'color': _selectedColor.value.toRadixString(16),
+      'centroid': {
+        'latitude': widget.centroid.latitude,
+        'longitude': widget.centroid.longitude,
+      },
+      'points': widget.points
+          .map((point) =>
+              {'latitude': point.latitude, 'longitude': point.longitude})
+          .toList(),
+      'droughtPrediction': _droughtPrediction,
+      'floodPrediction': _floodPrediction,
+      'firePrediction': _firePrediction,
+      'createdAt': Timestamp.now(),
+    };
 
     try {
       await FirebaseFirestore.instance.collection('areas').add(areaData);
@@ -386,6 +385,7 @@ class _SaveAreaPageState extends State<SaveAreaPage> {
     }
   }
 }
+
 String _getFireRecommendation(String fireRisk) {
   if (fireRisk == "1") {
     return "Alto riesgo de incendio. Asegúrate de mantener despejadas las áreas circundantes y evita actividades que puedan generar chispas.";
